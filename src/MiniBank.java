@@ -1,68 +1,98 @@
-import java.util.Scanner;
+class Customer {
+    private static long customerCounter = 100;
+    private final String customerId;
+    private String name;
+    private String email;
+    private String mobile;
 
-record BankInfo(String name, String branch) {}
+    public Customer(String name, String email, String mobile) {
+        this.customerId = generateCustomerId();
+        this.name = name;
+        this.email = email;
+        this.mobile = mobile;
+    }
 
-enum MenuOption {
-    OPEN_ACCOUNT,
-    DEPOSIT,
-    WITHDRAW,
-    TRANSFER,
-    EXIT
+    private static String generateCustomerId() {
+        return "CUST" + (++customerCounter);
+    }
+
+    public String getCustomerId() { return customerId; }
+    public String getName() { return name; }
+    public String getEmail() { return email; }
+    public String getMobile() { return mobile; }
+}
+
+class Account {
+    private static long accountCounter = 0;
+    private final String accountNumber;
+    private String ownerName;
+    private long balance;
+    private boolean active;
+
+    public Account(String ownerName, long balance) {
+        this.accountNumber = String.format("AC%04d", ++accountCounter);
+        this.ownerName = ownerName;
+        this.balance = Math.max(0, balance);
+        this.active = true;
+    }
+
+    public Account(String ownerName) {
+        this(ownerName, 0);
+    }
+
+    public void deposit(long amount) {
+        if (amount > 0) {
+            this.balance += amount;
+            System.out.printf("[%s] Successfully deposited Rs. %d. Current Balance: Rs. %d%n", accountNumber, amount, balance);
+        } else {
+            System.out.println("[REJECTED] Deposit amount must be positive.");
+        }
+    }
+
+    public boolean withdraw(long amount) {
+        if (amount <= 0) {
+            System.out.println("[REJECTED] Withdrawal amount must be positive.");
+            return false;
+        }
+        if (amount <= balance) {
+            balance -= amount;
+            System.out.printf("[%s] Successfully withdrew Rs. %d. Current Balance: Rs. %d%n", accountNumber, amount, balance);
+            return true;
+        } else {
+            System.out.printf("[%s] Insufficient funds! Attempted to withdraw Rs. %d with balance Rs. %d%n", accountNumber, amount, balance);
+            return false;
+        }
+    }
+
+    public String getAccountNumber() { return accountNumber; }
+    public String getOwnerName() { return ownerName; }
+    public long getBalance() { return balance; }
+    public boolean isActive() { return active; }
 }
 
 public class MiniBank {
     public static void main(String[] args) {
         System.out.println("PARTH PARIKH || 25DCS070");
-        System.out.println("Practical 01 - Part B: MiniBank Console Menu Shell & Records\n");
+        System.out.println("Practical 02 - Part B: Account Model & Invariant Encapsulation\n");
 
-        BankInfo bankInfo = new BankInfo("CHARUSAT MiniBank Central", "DEPSTAR Branch");
-        System.out.println("==================================================");
-        System.out.println("  " + bankInfo.name() + " (" + bankInfo.branch() + ")");
-        System.out.println("==================================================");
+        Customer c1 = new Customer("Parth Parikh", "parth@charusat.edu.in", "9876543210");
+        System.out.println("Customer registered: " + c1.getCustomerId() + " - " + c1.getName());
 
-        Scanner scanner = new Scanner(System.in);
-        boolean running = true;
+        Account[] accounts = new Account[3];
+        accounts[0] = new Account("Parth Parikh", 5000);
+        accounts[1] = new Account("Aarav Patel", 3000);
+        accounts[2] = new Account("Diya Shah");
 
-        while (running) {
-            System.out.println("\n--- MAIN MENU ---");
-            System.out.println("1. Open Account");
-            System.out.println("2. Deposit");
-            System.out.println("3. Withdraw");
-            System.out.println("4. Transfer");
-            System.out.println("5. Exit");
-            System.out.print("Select an option (1-5): ");
+        System.out.println("\n--- Testing Transactions ---");
+        accounts[0].deposit(2000);
+        accounts[0].withdraw(3000);
+        boolean failed = accounts[0].withdraw(10000);
+        System.out.println("Large withdrawal allowed? " + failed);
 
-            if (!scanner.hasNextInt()) {
-                System.out.println("[ERROR] Invalid choice. Please enter a valid number.");
-                scanner.next();
-                continue;
-            }
-
-            int choice = scanner.nextInt();
-            MenuOption selectedOption = switch (choice) {
-                case 1 -> MenuOption.OPEN_ACCOUNT;
-                case 2 -> MenuOption.DEPOSIT;
-                case 3 -> MenuOption.WITHDRAW;
-                case 4 -> MenuOption.TRANSFER;
-                case 5 -> MenuOption.EXIT;
-                default -> null;
-            };
-
-            if (selectedOption == null) {
-                System.out.println("[WARNING] Unknown option! Please select between 1 and 5.");
-                continue;
-            }
-
-            switch (selectedOption) {
-                case OPEN_ACCOUNT -> System.out.println(">> Open Account: Feature will be implemented in Practical 2.");
-                case DEPOSIT -> System.out.println(">> Deposit: Feature will be implemented in Practical 2.");
-                case WITHDRAW -> System.out.println(">> Withdraw: Feature will be implemented in Practical 2.");
-                case TRANSFER -> System.out.println(">> Transfer: Feature will be implemented in Practical 2.");
-                case EXIT -> {
-                    System.out.println("\nThank you for choosing CHARUSAT MiniBank. Goodbye!");
-                    running = false;
-                }
-            }
+        System.out.println("\n--- Final Account Status ---");
+        for (Account acc : accounts) {
+            System.out.printf("Account: %s | Owner: %-15s | Balance: Rs. %d%n",
+                    acc.getAccountNumber(), acc.getOwnerName(), acc.getBalance());
         }
     }
 }
