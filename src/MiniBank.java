@@ -1,73 +1,54 @@
-import java.util.Objects;
+import java.util.regex.Pattern;
 
-class Customer implements Cloneable {
-    public static class Address {
-        private String line;
-        private String city;
-        private String pincode;
+enum TransactionType {
+    DEPOSIT, WITHDRAW, TRANSFER
+}
 
-        public Address(String line, String city, String pincode) {
-            this.line = line;
-            this.city = city;
-            this.pincode = pincode;
-        }
+record Command(TransactionType type, String accountNumber, long amount) {}
 
-        public String getLine() { return line; }
-        public String getCity() { return city; }
-        public String getPincode() { return pincode; }
-        public void setCity(String city) { this.city = city; }
+class Validator {
+    private static final Pattern MOBILE_PATTERN = Pattern.compile("^[6-9][0-9]{9}$");
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+$");
+    private static final Pattern PAN_PATTERN = Pattern.compile("^[A-Z]{5}[0-9]{4}[A-Z]{1}$");
+    private static final Pattern IFSC_PATTERN = Pattern.compile("^[A-Z]{4}0[A-Z0-9]{6}$");
 
-        @Override
-        public String toString() {
-            return line + ", " + city + " (" + pincode + ")";
-        }
+    public static boolean isValidMobile(String mobile) {
+        return mobile != null && MOBILE_PATTERN.matcher(mobile).matches();
     }
 
-    private static long customerCounter = 100;
-    private final String customerId;
-    private String name;
-    private String email;
-    private String mobile;
-    private Address address;
-
-    public Customer(String name, String email, String mobile, Address address) {
-        this.customerId = "CUST" + (++customerCounter);
-        this.name = name;
-        this.email = email;
-        this.mobile = mobile;
-        this.address = address;
+    public static boolean isValidEmail(String email) {
+        return email != null && EMAIL_PATTERN.matcher(email).matches();
     }
 
-    public String getCustomerId() { return customerId; }
-    public String getName() { return name; }
-    public String getEmail() { return email; }
-    public String getMobile() { return mobile; }
-    public Address getAddress() { return address; }
-    public void setAddress(Address address) { this.address = address; }
+    public static boolean isValidPan(String pan) {
+        return pan != null && PAN_PATTERN.matcher(pan).matches();
+    }
 
-    @Override
-    public Customer clone() {
-        try {
-            Customer cloned = (Customer) super.clone();
-            if (this.address != null) {
-                cloned.address = new Address(this.address.line, this.address.city, this.address.pincode);
-            }
-            return cloned;
-        } catch (CloneNotSupportedException e) {
-            throw new AssertionError("Cloning failed", e);
+    public static boolean isValidIfsc(String ifsc) {
+        return ifsc != null && IFSC_PATTERN.matcher(ifsc).matches();
+    }
+}
+
+class CommandParser {
+    public static Command parse(String line) {
+        if (line == null || line.trim().isEmpty()) {
+            throw new IllegalArgumentException("Empty command string.");
         }
-    }
-
-    @Override
-    public String toString() {
-        return "Customer[" + customerId + " | " + name + " | " + address + "]";
+        String[] parts = line.trim().split("\\s+");
+        if (parts.length != 3) {
+            throw new IllegalArgumentException("Expected exactly 3 parts: <TYPE> <ACC_NO> <AMOUNT>");
+        }
+        TransactionType type = TransactionType.valueOf(parts[0].toUpperCase());
+        String accNo = parts[1];
+        long amount = Long.parseLong(parts[2]);
+        return new Command(type, accNo, amount);
     }
 }
 
 class Account {
     private final String accountNumber;
-    private String ownerName;
-    private long balance;
+    private final String ownerName;
+    private final long balance;
 
     public Account(String accountNumber, String ownerName, long balance) {
         this.accountNumber = accountNumber;
@@ -78,53 +59,47 @@ class Account {
     public String getAccountNumber() { return accountNumber; }
     public String getOwnerName() { return ownerName; }
     public long getBalance() { return balance; }
+}
 
-    @Override
-    public String toString() {
-        return String.format("%s | %-12s | Rs. %d", accountNumber, ownerName, balance);
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof Account other)) return false;
-        return Objects.equals(accountNumber, other.accountNumber);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(accountNumber);
+class StatementFormatter {
+    public static String buildStatement(Account account) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=========================================\n");
+        sb.append("         MINIBANK OFFICIAL STATEMENT      \n");
+        sb.append("=========================================\n");
+        sb.append("Account Holder : ").append(account.getOwnerName()).append("\n");
+        
+        String acc = account.getAccountNumber();
+        String maskedAcc = (acc.length() > 4) ? "AC****" + acc.substring(acc.length() - 2) : acc;
+        sb.append("Account Number : ").append(maskedAcc).append("\n");
+        sb.append("Current Balance: Rs. ").append(account.getBalance()).append("\n");
+        sb.append("Status         : Active | KYC Verified\n");
+        sb.append("=========================================\n");
+        return sb.toString();
     }
 }
 
 public class MiniBank {
     public static void main(String[] args) {
         System.out.println("PARTH PARIKH || 25DCS070");
-        System.out.println("Practical 03 - Part B: Object Contract & Deep-Copy Cloning\n");
+        System.out.println("Practical 04 - Part B: Regex & Masked Statement\n");
 
-        Customer.Address addr1 = new Customer.Address("DEPSTAR Campus", "Changa", "388421");
-        Customer c1 = new Customer("Parth Parikh", "parth@charusat.edu.in", "9876543210", addr1);
-        System.out.println("Original Customer: " + c1);
+        System.out.println("--- Testing Regular Expression Validators ---");
+        System.out.println("isValidMobile(\"9876543210\"): " + Validator.isValidMobile("9876543210"));
+        System.out.println("isValidMobile(\"12345\"):      " + Validator.isValidMobile("12345"));
+        System.out.println("isValidEmail(\"parth@charusat.ac.in\"): " + Validator.isValidEmail("parth@charusat.ac.in"));
+        System.out.println("isValidEmail(\"invalid_email\"):         " + Validator.isValidEmail("invalid_email"));
+        System.out.println("isValidPan(\"ABCDE1234F\"):  " + Validator.isValidPan("ABCDE1234F"));
+        System.out.println("isValidIfsc(\"CHAR0002031\"): " + Validator.isValidIfsc("CHAR0002031"));
 
-        Customer c1Clone = c1.clone();
-        c1Clone.getAddress().setCity("Anand");
-        System.out.println("Cloned Customer (Modified City): " + c1Clone);
-        System.out.println("Original Customer City preserved? " + c1.getAddress().getCity().equals("Changa"));
+        System.out.println("\n--- Testing Command Parser ---");
+        String inputCmd = "DEPOSIT AC0001 500";
+        Command cmd = CommandParser.parse(inputCmd);
+        System.out.println("Input String: " + inputCmd);
+        System.out.println("Parsed Command: Type=" + cmd.type() + ", Account=" + cmd.accountNumber() + ", Amount=" + cmd.amount());
 
-        Account a1 = new Account("AC0001", "Parth Parikh", 5000);
-        Account a2 = new Account("AC0001", "Parth Parikh Duplicate Reference", 7000);
-        Account a3 = new Account("AC0002", "Aarav Patel", 3000);
-
-        System.out.println("\nTesting toString():");
-        System.out.println("a1 -> " + a1);
-        System.out.println("a3 -> " + a3);
-
-        System.out.println("\nTesting equals() & hashCode() contract:");
-        System.out.println("a1.equals(a2) [same account number]: " + a1.equals(a2));
-        System.out.println("a1.equals(a3) [different account number]: " + a1.equals(a3));
-        System.out.println("Hashcode equality: " + (a1.hashCode() == a2.hashCode()));
-
-        Object obj = a1;
-        System.out.println("instanceof Account check: " + (obj instanceof Account));
+        System.out.println("\n--- Testing StatementFormatter (StringBuilder) ---");
+        Account acc = new Account("AC0001", "Parth Parikh", 75000);
+        System.out.println(StatementFormatter.buildStatement(acc));
     }
 }
