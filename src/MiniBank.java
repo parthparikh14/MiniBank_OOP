@@ -1,92 +1,92 @@
-interface Transactable {
-    void deposit(long amount);
-    boolean withdraw(long amount);
-    long getBalance();
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.List;
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.FIELD)
+@interface Id {}
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.FIELD)
+@interface Positive {
+    String message() default "must be > 0";
 }
 
-interface InterestBearing {
-    double interestRate();
-    default double yearlyInterest(long balance) {
-        return balance * (interestRate() / 100.0);
-    }
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.FIELD)
+@interface MaxLength {
+    int value();
 }
 
-@FunctionalInterface
-interface WithdrawRule {
-    boolean allow(Account account, long amount);
-}
+class Account {
+    @Id
+    private final String accountNumber;
 
-interface Premium {}
+    @MaxLength(15)
+    private final String holderName;
 
-abstract class Account implements Transactable {
-    protected final String accountNumber;
-    protected final String ownerName;
-    protected long balance;
+    @Positive
+    private final double balance;
 
-    public Account(String accountNumber, String ownerName, long balance) {
+    public Account(String accountNumber, String holderName, double balance) {
         this.accountNumber = accountNumber;
-        this.ownerName = ownerName;
+        this.holderName = holderName;
         this.balance = balance;
     }
 
-    @Override
-    public void deposit(long amount) {
-        if (amount > 0) balance += amount;
-    }
-
-    @Override
-    public long getBalance() {
-        return balance;
-    }
-
     public String getAccountNumber() { return accountNumber; }
-    public String getOwnerName() { return ownerName; }
+    public String getHolderName() { return holderName; }
+    public double getBalance() { return balance; }
 }
 
-class SavingsAccount extends Account implements InterestBearing, Premium {
-    public SavingsAccount(String accountNumber, String ownerName, long balance) {
-        super(accountNumber, ownerName, balance);
-    }
-
-    @Override
-    public boolean withdraw(long amount) {
-        if (amount > 0 && balance - amount >= 1000) {
-            balance -= amount;
-            return true;
+class AnnotationValidator {
+    public static String[] validate(Object obj) {
+        List<String> errors = new ArrayList<>();
+        Class<?> clazz = obj.getClass();
+        for (Field field : clazz.getDeclaredFields()) {
+            field.setAccessible(true);
+            try {
+                Object val = field.get(obj);
+                if (field.isAnnotationPresent(Positive.class)) {
+                    Positive pos = field.getAnnotation(Positive.class);
+                    if (val instanceof Number num && num.doubleValue() <= 0) {
+                        errors.add(field.getName() + " " + pos.message() + " (found: " + num + ")");
+                    }
+                }
+                if (field.isAnnotationPresent(MaxLength.class)) {
+                    MaxLength max = field.getAnnotation(MaxLength.class);
+                    if (val instanceof String s && s.length() > max.value()) {
+                        errors.add(field.getName() + " length exceeds " + max.value() + " (found: " + s.length() + ")");
+                    }
+                }
+            } catch (IllegalAccessException e) {
+                errors.add("Access error: " + e.getMessage());
+            }
         }
-        return false;
-    }
-
-    @Override
-    public double interestRate() {
-        return 4.0;
+        return errors.toArray(new String[0]);
     }
 }
 
 public class MiniBank {
     public static void main(String[] args) {
         System.out.println("PARTH PARIKH || 25DCS070");
-        System.out.println("Practical 06 - Part B: Interfaces & Pluggable Strategy Rules\n");
+        System.out.println("Practical 07 - Part B: Custom Annotations & Reflection Engine\n");
 
-        SavingsAccount sa = new SavingsAccount("AC1001", "Parth Parikh", 68000);
-        System.out.println("Initial Balance: Rs. " + sa.getBalance());
-        System.out.println("Yearly Computed Interest (Default Method): Rs. " + sa.yearlyInterest(sa.getBalance()));
+        System.out.println("--- Validating Compliant Account ---");
+        Account validAcc = new Account("AC1001", "Parth Parikh", 68000.0);
+        String[] validErrors = AnnotationValidator.validate(validAcc);
+        System.out.println("Valid account errors count: " + validErrors.length);
 
-        WithdrawRule vipRuleAnonymous = new WithdrawRule() {
-            @Override
-            public boolean allow(Account account, long amount) {
-                return amount <= 50000 && account.getBalance() >= amount;
-            }
-        };
-
-        WithdrawRule vipRuleLambda = (account, amount) -> amount <= 100000 && account.getBalance() >= amount;
-
-        System.out.println("\n--- Testing Functional Interface (WithdrawRule) ---");
-        System.out.println("Anonymous Rule (Allow Rs. 40,000):  " + vipRuleAnonymous.allow(sa, 40000));
-        System.out.println("Anonymous Rule (Allow Rs. 60,000):  " + vipRuleAnonymous.allow(sa, 60000));
-        System.out.println("Lambda Rule    (Allow Rs. 60,000):  " + vipRuleLambda.allow(sa, 60000));
-
-        System.out.println("\nMarker Interface Check:");
-        System.out.println("Is SavingsAccount marked Premium? " + (sa instanceof Premium));
+        System.out.println("\n--- Validating Invariant-Breaching Account ---");
+        Account invalidAcc = new Account("AC1002", "Parth Parikh - Very Long Holder Name Exceeding Limit", -100.0);
+        String[] errors = AnnotationValidator.validate(invalidAcc);
+        System.out.println("Detected validation errors via Reflection:");
+        for (String err : errors) {
+            System.out.println("  [VALIDATION ERROR] " + err);
+        }
     }
 }
