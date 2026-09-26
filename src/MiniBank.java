@@ -1,92 +1,123 @@
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
-import java.lang.reflect.Field;
-import java.util.ArrayList;
-import java.util.List;
-
-@Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.FIELD)
-@interface Id {}
-
-@Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.FIELD)
-@interface Positive {
-    String message() default "must be > 0";
+class BankException extends Exception {
+    public BankException(String message) {
+        super(message);
+    }
 }
 
-@Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.FIELD)
-@interface MaxLength {
-    int value();
+class InsufficientFundsException extends BankException {
+    private final long shortfall;
+
+    public InsufficientFundsException(String message, long shortfall) {
+        super(message);
+        this.shortfall = shortfall;
+    }
+
+    public long getShortfall() { return shortfall; }
+}
+
+class AccountNotFoundException extends BankException {
+    public AccountNotFoundException(String message) {
+        super(message);
+    }
+}
+
+class InvalidAmountException extends BankException {
+    public InvalidAmountException(String message) {
+        super(message);
+    }
+}
+
+class BankSession implements AutoCloseable {
+    private final String sessionToken;
+
+    public BankSession(String sessionToken) {
+        this.sessionToken = sessionToken;
+        System.out.println("[SESSION OPENED] Active authenticated token: " + sessionToken);
+    }
+
+    @Override
+    public void close() {
+        System.out.println("[SESSION CLOSED] Safe teardown completed for token: " + sessionToken);
+    }
 }
 
 class Account {
-    @Id
     private final String accountNumber;
+    private final String ownerName;
+    private long balance;
 
-    @MaxLength(15)
-    private final String holderName;
-
-    @Positive
-    private final double balance;
-
-    public Account(String accountNumber, String holderName, double balance) {
+    public Account(String accountNumber, String ownerName, long balance) {
         this.accountNumber = accountNumber;
-        this.holderName = holderName;
+        this.ownerName = ownerName;
         this.balance = balance;
     }
 
-    public String getAccountNumber() { return accountNumber; }
-    public String getHolderName() { return holderName; }
-    public double getBalance() { return balance; }
-}
-
-class AnnotationValidator {
-    public static String[] validate(Object obj) {
-        List<String> errors = new ArrayList<>();
-        Class<?> clazz = obj.getClass();
-        for (Field field : clazz.getDeclaredFields()) {
-            field.setAccessible(true);
-            try {
-                Object val = field.get(obj);
-                if (field.isAnnotationPresent(Positive.class)) {
-                    Positive pos = field.getAnnotation(Positive.class);
-                    if (val instanceof Number num && num.doubleValue() <= 0) {
-                        errors.add(field.getName() + " " + pos.message() + " (found: " + num + ")");
-                    }
-                }
-                if (field.isAnnotationPresent(MaxLength.class)) {
-                    MaxLength max = field.getAnnotation(MaxLength.class);
-                    if (val instanceof String s && s.length() > max.value()) {
-                        errors.add(field.getName() + " length exceeds " + max.value() + " (found: " + s.length() + ")");
-                    }
-                }
-            } catch (IllegalAccessException e) {
-                errors.add("Access error: " + e.getMessage());
-            }
+    public void deposit(long amount) throws InvalidAmountException {
+        if (amount <= 0) {
+            throw new InvalidAmountException("Deposit amount must be strictly positive: " + amount);
         }
-        return errors.toArray(new String[0]);
+        balance += amount;
     }
+
+    public void withdraw(long amount) throws InsufficientFundsException, InvalidAmountException {
+        if (amount <= 0) {
+            throw new InvalidAmountException("Withdrawal amount must be strictly positive: " + amount);
+        }
+        if (amount > balance) {
+            long shortfall = amount - balance;
+            throw new InsufficientFundsException("Insufficient funds. Shortfall: Rs. " + shortfall, shortfall);
+        }
+        balance -= amount;
+    }
+
+    public void transfer(Account to, long amount) throws BankException {
+        if (to == null) {
+            throw new AccountNotFoundException("Destination account cannot be null.");
+        }
+        try {
+            System.out.println("Initiating transfer of Rs. " + amount + " to " + to.getAccountNumber());
+            this.withdraw(amount);
+            to.deposit(amount);
+            System.out.println("Transfer successful!");
+        } catch (InsufficientFundsException | InvalidAmountException e) {
+            System.err.println("Transaction failed: " + e.getMessage());
+            throw new BankException("Transfer transaction aborted: " + e.getMessage());
+        } finally {
+            System.out.println("[FINALLY] Transfer lifecycle stage complete.");
+        }
+    }
+
+    public String getAccountNumber() { return accountNumber; }
+    public String getOwnerName() { return ownerName; }
+    public long getBalance() { return balance; }
 }
 
 public class MiniBank {
     public static void main(String[] args) {
         System.out.println("PARTH PARIKH || 25DCS070");
-        System.out.println("Practical 07 - Part B: Custom Annotations & Reflection Engine\n");
+        System.out.println("Practical 08 - Part B: Custom Checked Exceptions & Session Management\n");
 
-        System.out.println("--- Validating Compliant Account ---");
-        Account validAcc = new Account("AC1001", "Parth Parikh", 68000.0);
-        String[] validErrors = AnnotationValidator.validate(validAcc);
-        System.out.println("Valid account errors count: " + validErrors.length);
+        Account a1 = new Account("AC1001", "Parth Parikh", 1000);
+        Account a2 = new Account("AC1002", "Aarav Patel", 2000);
 
-        System.out.println("\n--- Validating Invariant-Breaching Account ---");
-        Account invalidAcc = new Account("AC1002", "Parth Parikh - Very Long Holder Name Exceeding Limit", -100.0);
-        String[] errors = AnnotationValidator.validate(invalidAcc);
-        System.out.println("Detected validation errors via Reflection:");
-        for (String err : errors) {
-            System.out.println("  [VALIDATION ERROR] " + err);
+        System.out.println("--- Testing Try-With-Resources (BankSession) ---");
+        try (BankSession session = new BankSession("AUTH_TOKEN_777")) {
+            System.out.println("Session operational... Performing test withdrawal:");
+            a1.withdraw(5000);
+        } catch (InsufficientFundsException e) {
+            System.out.println("Caught InsufficientFundsException: " + e.getMessage());
+            System.out.println("Reported Shortfall: Rs. " + e.getShortfall());
+        } catch (InvalidAmountException e) {
+            System.out.println("Caught InvalidAmountException: " + e.getMessage());
         }
+
+        System.out.println("\n--- Testing Exception Propagation during Inter-Account Transfer ---");
+        try {
+            a1.transfer(a2, 2500);
+        } catch (BankException e) {
+            System.out.println("Interception confirmed in caller: " + e.getMessage());
+        }
+
+        System.out.println("\nFinal verified balance of AC1001: Rs. " + a1.getBalance());
     }
 }
