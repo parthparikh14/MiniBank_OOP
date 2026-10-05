@@ -1,4 +1,8 @@
-class Account {
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+class Account implements Comparable<Account> {
     private final String accountNumber;
     private long balance;
 
@@ -24,54 +28,70 @@ class Account {
     public String getAccountNumber() {
         return accountNumber;
     }
-}
-
-class AccountWorker implements Runnable {
-    private final Account account;
-    private final int times;
-    private final long amount;
-
-    public AccountWorker(Account account, int times, long amount) {
-        this.account = account;
-        this.times = times;
-        this.amount = amount;
-    }
 
     @Override
-    public void run() {
-        System.out.println("Thread [" + Thread.currentThread().getName() + "] started processing.");
-        for (int i = 0; i < times; i++) {
-            account.deposit(amount);
+    public int compareTo(Account o) {
+        return this.accountNumber.compareTo(o.accountNumber);
+    }
+}
+
+class TransactionProcessor {
+    private final ExecutorService pool;
+
+    public TransactionProcessor(int threads) {
+        this.pool = Executors.newFixedThreadPool(threads);
+    }
+
+    public void submit(Runnable task) {
+        pool.execute(task);
+    }
+
+    public void stop() {
+        pool.shutdown();
+        try {
+            if (!pool.awaitTermination(5, TimeUnit.SECONDS)) {
+                pool.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            pool.shutdownNow();
         }
-        System.out.println("Thread [" + Thread.currentThread().getName() + "] finished deposits.");
     }
 }
 
 public class MiniBank {
-    public static void main(String[] args) throws InterruptedException {
+    public static void safeTransfer(Account from, Account to, long amount) {
+        // Enforce deterministic global lock acquisition order: smaller account number first
+        Account first = from.compareTo(to) < 0 ? from : to;
+        Account second = (first == from) ? to : from;
+
+        synchronized (first) {
+            synchronized (second) {
+                from.withdraw(amount);
+                to.deposit(amount);
+            }
+        }
+    }
+
+    public static void main(String[] args) {
         System.out.println("PARTH PARIKH || 25DCS070");
-        System.out.println("Practical 09 - Part B: Multithreaded Synchronization & Monitors\n");
+        System.out.println("Practical 10 - Part B: Concurrent Batch Engine & Deadlock Prevention\n");
 
-        Account account = new Account("AC1001", 0);
-        int threadCount = 10;
-        int depositsPerThread = 1000;
-        long amountPerDeposit = 1;
+        TransactionProcessor processor = new TransactionProcessor(4);
+        Account a1 = new Account("AC1001", 50000);
+        Account a2 = new Account("AC1002", 50000);
 
-        System.out.println("Starting " + threadCount + " concurrent worker threads...");
-        Thread[] threads = new Thread[threadCount];
+        System.out.println("Submitting batch transfers concurrently...");
 
-        for (int i = 0; i < threadCount; i++) {
-            threads[i] = new Thread(new AccountWorker(account, depositsPerThread, amountPerDeposit), "Worker-" + (i + 1));
-            threads[i].start();
+        // Thread 1: transfers from AC1001 to AC1002
+        // Thread 2: transfers from AC1002 to AC1001
+        for (int i = 0; i < 20; i++) {
+            processor.submit(() -> safeTransfer(a1, a2, 100));
+            processor.submit(() -> safeTransfer(a2, a1, 100));
         }
 
-        for (int i = 0; i < threadCount; i++) {
-            threads[i].join();
-        }
-
-        System.out.println("\nAll worker threads terminated.");
-        System.out.println("Expected Final Balance: Rs. " + (threadCount * depositsPerThread * amountPerDeposit));
-        System.out.println("Actual Synchronized Balance: Rs. " + account.getBalance());
-        System.out.println("Thread Safety Verified: " + (account.getBalance() == 10000));
+        processor.stop();
+        System.out.println("All batch tasks safely completed on Thread Pool without deadlocks!");
+        System.out.printf("Final Balances -> AC1001: Rs. %d | AC1002: Rs. %d%n", a1.getBalance(), a2.getBalance());
+        System.out.println("Total System Solvency Maintained: Rs. " + (a1.getBalance() + a2.getBalance()));
     }
 }
