@@ -1,145 +1,93 @@
-import java.io.*;
-import java.nio.file.*;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
-class Customer implements Serializable {
-    private static final long serialVersionUID = 1L;
-    private final String name;
-
-    public Customer(String name) {
-        this.name = name;
-    }
-
-    public String getName() { return name; }
-}
-
-class Account implements Serializable {
-    private static final long serialVersionUID = 1L;
+class Account implements Comparable<Account> {
     private final String accountNumber;
-    private final Customer customer;
-    private long balance;
+    private final String ownerName;
+    private final long balance;
 
-    public Account(String accountNumber, Customer customer, long balance) {
+    public Account(String accountNumber, String ownerName, long balance) {
         this.accountNumber = accountNumber;
-        this.customer = customer;
+        this.ownerName = ownerName;
         this.balance = balance;
     }
 
     public String getAccountNumber() { return accountNumber; }
-    public Customer getCustomer() { return customer; }
+    public String getOwnerName() { return ownerName; }
     public long getBalance() { return balance; }
 
     @Override
+    public int compareTo(Account other) {
+        return this.accountNumber.compareTo(other.accountNumber);
+    }
+
+    @Override
     public String toString() {
-        return "Account[" + accountNumber + " | " + customer.getName() + " | Rs. " + balance + "]";
+        return String.format("%s | %-12s | Rs. %,d", accountNumber, ownerName, balance);
     }
 }
 
-class StatePersister {
-    public static void save(Account[] accounts, Path file) throws IOException {
-        if (file.getParent() != null && !Files.exists(file.getParent())) {
-            Files.createDirectories(file.getParent());
-        }
-        try (ObjectOutputStream oos = new ObjectOutputStream(Files.newOutputStream(file))) {
-            oos.writeObject(accounts);
-        }
+class AccountStore {
+    private final Map<String, Account> accounts = new HashMap<>();
+    private final List<String> history = new ArrayList<>();
+
+    public void add(Account account) {
+        accounts.put(account.getAccountNumber(), account);
+        history.add("REGISTER | " + account.getAccountNumber() + " | " + account.getOwnerName());
     }
 
-    public static Account[] load(Path file) throws IOException, ClassNotFoundException {
-        try (ObjectInputStream ois = new ObjectInputStream(Files.newInputStream(file))) {
-            return (Account[]) ois.readObject();
-        }
-    }
-}
-
-class TransactionLog {
-    public static void append(Path file, String line) throws IOException {
-        if (file.getParent() != null && !Files.exists(file.getParent())) {
-            Files.createDirectories(file.getParent());
-        }
-        Files.writeString(file, line + System.lineSeparator(),
-                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-    }
-}
-
-class ReportGenerator {
-    public static void generateReport(Path logsDir, Path reportFile) throws IOException {
-        long totalDeposits = 0;
-        long totalWithdrawals = 0;
-
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(logsDir, "*.log")) {
-            for (Path entry : stream) {
-                BasicFileAttributes attrs = Files.readAttributes(entry, BasicFileAttributes.class);
-                System.out.println("Processing Log: " + entry.getFileName() + " (Size: " + attrs.size() + " bytes)");
-                List<String> lines = Files.readAllLines(entry);
-                for (String line : lines) {
-                    if (line.contains("DEPOSIT")) {
-                        totalDeposits += parseAmount(line);
-                    } else if (line.contains("WITHDRAW")) {
-                        totalWithdrawals += parseAmount(line);
-                    }
-                }
-            }
-        }
-
-        String report = String.format("""
-                =========================================
-                      MINIBANK END-OF-DAY AUDIT REPORT   
-                =========================================
-                Total Inflow (Deposits)   : Rs. %d
-                Total Outflow (Withdrawals): Rs. %d
-                Net Reserve Fluctuation   : Rs. %d
-                =========================================
-                """, totalDeposits, totalWithdrawals, (totalDeposits - totalWithdrawals));
-
-        Files.writeString(reportFile, report, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-        System.out.println(report);
+    public Account get(String accountNumber) {
+        return accounts.get(accountNumber);
     }
 
-    private static long parseAmount(String line) {
-        try {
-            String[] parts = line.split("\\|");
-            for (String part : parts) {
-                if (part.trim().startsWith("Rs.")) {
-                    return Long.parseLong(part.trim().replace("Rs.", "").trim());
-                }
-            }
-        } catch (Exception ignored) {}
-        return 0;
+    public List<Account> getAll() {
+        return new ArrayList<>(accounts.values());
+    }
+
+    public List<Account> sortedByBalance() {
+        List<Account> sorted = new ArrayList<>(accounts.values());
+        sorted.sort(Comparator.comparingLong(Account::getBalance).reversed());
+        return sorted;
+    }
+
+    public List<String> getHistory() {
+        return Collections.unmodifiableList(history);
     }
 }
 
 public class MiniBank {
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
         System.out.println("PARTH PARIKH || 25DCS070");
-        System.out.println("Practical 11 - Part B: Persistence & NIO Audit Trail\n");
+        System.out.println("Practical 12 - Part B: Concurrent Collections & Stream Analytics\n");
 
-        Path dataPath = Paths.get("data/accounts.dat");
-        Path logPath = Paths.get("logs/transactions.log");
-        Path reportPath = Paths.get("logs/eod_report.txt");
+        AccountStore store = new AccountStore();
+        store.add(new Account("AC1002", "Aarav Patel", 31000));
+        store.add(new Account("AC1001", "Parth Parikh", 68000));
+        store.add(new Account("AC1003", "Diya Shah", 38000));
 
-        Account[] accounts = new Account[]{
-                new Account("AC1001", new Customer("Parth Parikh"), 68000),
-                new Account("AC1002", new Customer("Aarav Patel"), 31000),
-                new Account("AC1003", new Customer("Diya Shah"), 38000)
-        };
+        System.out.println("--- Lookup by Account Number ---");
+        Account found = store.get("AC1001");
+        System.out.println("Found: " + found);
 
-        System.out.println("Persisting account array to binary storage via ObjectOutputStream...");
-        StatePersister.save(accounts, dataPath);
-
-        System.out.println("Reloading accounts via ObjectInputStream...");
-        Account[] reloaded = StatePersister.load(dataPath);
-        for (Account a : reloaded) {
-            System.out.println("   Rehydrated: " + a);
+        System.out.println("\n--- Accounts Sorted by Balance (Highest First - Comparator) ---");
+        for (Account acc : store.sortedByBalance()) {
+            System.out.println("   " + acc);
         }
 
-        System.out.println("\nLogging financial mutations to NIO audit log...");
-        TransactionLog.append(logPath, "DEPOSIT | AC1001 | Rs. 5000");
-        TransactionLog.append(logPath, "WITHDRAW | AC1002 | Rs. 2000");
+        System.out.println("\n--- Natural Order Sorting (Comparable<Account>) ---");
+        List<Account> natural = store.getAll();
+        Collections.sort(natural);
+        for (Account acc : natural) {
+            System.out.println("   " + acc);
+        }
 
-        System.out.println("\nGenerating End-of-Day Audit Report via NIO DirectoryStream:");
-        ReportGenerator.generateReport(Paths.get("logs"), reportPath);
+        System.out.println("\n--- Streams API Analytics ---");
+        long totalCapital = store.getAll().stream().mapToLong(Account::getBalance).sum();
+        System.out.printf("Total Bank Reserve Capital: Rs. %,d%n", totalCapital);
+
+        ConcurrentHashMap<String, Account> concurrentStore = new ConcurrentHashMap<>();
+        store.getAll().forEach(a -> concurrentStore.put(a.getAccountNumber(), a));
+        System.out.println("Thread-Safe ConcurrentHashMap populated: " + concurrentStore.size() + " accounts.");
     }
 }
