@@ -1,93 +1,146 @@
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+import java.lang.reflect.Field;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
-class Account implements Comparable<Account> {
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.FIELD)
+@interface Id {}
+
+class Account {
+    @Id
     private final String accountNumber;
-    private final String ownerName;
-    private final long balance;
+    private final String holderName;
+    private final double balance;
 
-    public Account(String accountNumber, String ownerName, long balance) {
+    public Account(String accountNumber, String holderName, double balance) {
         this.accountNumber = accountNumber;
-        this.ownerName = ownerName;
+        this.holderName = holderName;
         this.balance = balance;
     }
 
     public String getAccountNumber() { return accountNumber; }
-    public String getOwnerName() { return ownerName; }
-    public long getBalance() { return balance; }
-
-    @Override
-    public int compareTo(Account other) {
-        return this.accountNumber.compareTo(other.accountNumber);
-    }
+    public String getHolderName() { return holderName; }
+    public double getBalance() { return balance; }
 
     @Override
     public String toString() {
-        return String.format("%s | %-12s | Rs. %,d", accountNumber, ownerName, balance);
+        return "Account[" + accountNumber + " | " + holderName + " | Rs. " + balance + "]";
     }
 }
 
-class AccountStore {
-    private final Map<String, Account> accounts = new HashMap<>();
-    private final List<String> history = new ArrayList<>();
+class Customer {
+    @Id
+    private final String customerId;
+    private final String name;
 
-    public void add(Account account) {
-        accounts.put(account.getAccountNumber(), account);
-        history.add("REGISTER | " + account.getAccountNumber() + " | " + account.getOwnerName());
+    public Customer(String customerId, String name) {
+        this.customerId = customerId;
+        this.name = name;
     }
 
-    public Account get(String accountNumber) {
-        return accounts.get(accountNumber);
+    public String getCustomerId() { return customerId; }
+    public String getName() { return name; }
+
+    @Override
+    public String toString() {
+        return "Customer[" + customerId + " | " + name + "]";
+    }
+}
+
+class Repository<T> {
+    private final Map<String, T> storage = new HashMap<>();
+
+    private String extractId(T entity) {
+        Class<?> clazz = entity.getClass();
+        while (clazz != null && clazz != Object.class) {
+            for (Field field : clazz.getDeclaredFields()) {
+                if (field.isAnnotationPresent(Id.class)) {
+                    field.setAccessible(true);
+                    try {
+                        Object idVal = field.get(entity);
+                        return idVal != null ? idVal.toString() : null;
+                    } catch (IllegalAccessException ignored) {}
+                }
+            }
+            clazz = clazz.getSuperclass();
+        }
+        return null;
     }
 
-    public List<Account> getAll() {
-        return new ArrayList<>(accounts.values());
+    public T save(T entity) {
+        String id = extractId(entity);
+        if (id == null) {
+            throw new IllegalArgumentException("Entity lacks @Id primary key!");
+        }
+        storage.put(id, entity);
+        return entity;
     }
 
-    public List<Account> sortedByBalance() {
-        List<Account> sorted = new ArrayList<>(accounts.values());
-        sorted.sort(Comparator.comparingLong(Account::getBalance).reversed());
-        return sorted;
+    @SafeVarargs
+    public final void saveAll(T... items) {
+        for (T item : items) {
+            save(item);
+        }
     }
 
-    public List<String> getHistory() {
-        return Collections.unmodifiableList(history);
+    public T findById(String id) {
+        return storage.get(id);
+    }
+
+    public List<T> findAll() {
+        return new ArrayList<>(storage.values());
+    }
+
+    public boolean delete(String id) {
+        return storage.remove(id) != null;
+    }
+
+    public int count() {
+        return storage.size();
+    }
+
+    public static <N extends Number> double average(N[] values) {
+        if (values == null || values.length == 0) return 0.0;
+        double sum = 0.0;
+        for (N val : values) {
+            sum += val.doubleValue();
+        }
+        return sum / values.length;
     }
 }
 
 public class MiniBank {
     public static void main(String[] args) {
         System.out.println("PARTH PARIKH || 25DCS070");
-        System.out.println("Practical 12 - Part B: Concurrent Collections & Stream Analytics\n");
+        System.out.println("Practical 13 - Part B: Generic Repository CRUD Pattern with Reflection\n");
 
-        AccountStore store = new AccountStore();
-        store.add(new Account("AC1002", "Aarav Patel", 31000));
-        store.add(new Account("AC1001", "Parth Parikh", 68000));
-        store.add(new Account("AC1003", "Diya Shah", 38000));
+        Repository<Account> accountRepo = new Repository<>();
+        accountRepo.saveAll(
+                new Account("AC1001", "Parth Parikh", 68000),
+                new Account("AC1002", "Aarav Patel", 31000),
+                new Account("AC1003", "Diya Shah", 38000)
+        );
 
-        System.out.println("--- Lookup by Account Number ---");
-        Account found = store.get("AC1001");
-        System.out.println("Found: " + found);
-
-        System.out.println("\n--- Accounts Sorted by Balance (Highest First - Comparator) ---");
-        for (Account acc : store.sortedByBalance()) {
-            System.out.println("   " + acc);
+        System.out.println("Accounts in Generic Repository (" + accountRepo.count() + " total):");
+        for (Account a : accountRepo.findAll()) {
+            System.out.println("   " + a);
         }
 
-        System.out.println("\n--- Natural Order Sorting (Comparable<Account>) ---");
-        List<Account> natural = store.getAll();
-        Collections.sort(natural);
-        for (Account acc : natural) {
-            System.out.println("   " + acc);
+        System.out.println("\nQuerying findById(\"AC1001\"): " + accountRepo.findById("AC1001"));
+
+        System.out.println("\n--- Type-Safe Reusability: Customer Repository ---");
+        Repository<Customer> customerRepo = new Repository<>();
+        customerRepo.save(new Customer("CUST101", "Parth Parikh"));
+        customerRepo.save(new Customer("CUST102", "Aarav Patel"));
+        for (Customer c : customerRepo.findAll()) {
+            System.out.println("   " + c);
         }
 
-        System.out.println("\n--- Streams API Analytics ---");
-        long totalCapital = store.getAll().stream().mapToLong(Account::getBalance).sum();
-        System.out.printf("Total Bank Reserve Capital: Rs. %,d%n", totalCapital);
-
-        ConcurrentHashMap<String, Account> concurrentStore = new ConcurrentHashMap<>();
-        store.getAll().forEach(a -> concurrentStore.put(a.getAccountNumber(), a));
-        System.out.println("Thread-Safe ConcurrentHashMap populated: " + concurrentStore.size() + " accounts.");
+        System.out.println("\n--- Testing Bounded Generic Method (Average Calculation) ---");
+        Double[] balances = new Double[]{68000.0, 31000.0, 38000.0};
+        System.out.printf("Average Account Balance: Rs. %.2f%n", Repository.average(balances));
     }
 }
